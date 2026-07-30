@@ -191,7 +191,10 @@
   #signin p{color:var(--ink-3);font-size:13px;margin:0 0 20px}
   #signin button{background:var(--accent);color:#fff;border:none;border-radius:11px;padding:12px 20px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;width:100%}
   .startloghdr{display:flex;gap:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);margin-bottom:6px}
-  .startloghdr span:nth-child(1){width:92px} .startloghdr span:nth-child(2){width:128px} .startloghdr span:nth-child(3){flex:1} .startloghdr span:nth-child(4){flex:1} .startloghdr span:nth-child(5){width:34px}
+  .startloghdr span:nth-child(1){width:128px} .startloghdr span:nth-child(2){flex:1} .startloghdr span:nth-child(3){flex:1} .startloghdr span:nth-child(4){width:34px}
+  .managelists{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px}
+  .managelists .mlrow{display:flex;gap:8px;align-items:center}
+  .managelists .mlrow input{border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;border-radius:9px;padding:7px 10px;width:150px}
   .startlog{display:flex;flex-direction:column;gap:8px}
   .startrow{display:flex;align-items:center;gap:8px}
   .startrow .stsel{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:8px 9px;font:inherit;font-weight:600}
@@ -305,12 +308,14 @@ const DRIVER_LABELS={visitsPerYear:'Visits / patient / yr',cashPerVisit:'Cash pa
 const DRIVERS={visitsPerYear:6.7, cashPerVisit:118, insPerVisit:29, productPerYear:276, serviceMargin:65, productMargin:45, avgLifespanYears:1.5, annualRetention:33, discountRate:10};
 const REV2025={0:191130,1:90919,2:113298,3:118449,4:121715,5:177223,6:189610,7:241275,8:177639,9:211645,10:99174,11:200881};
 const DEFAULT_SOURCES=[{id:'s1',name:'Facebook Ads'},{id:'s2',name:'Google'},{id:'s3',name:'Word of Mouth'},{id:'s4',name:'Referral'},{id:'s5',name:'Other'}];
-const DEFAULT_NICHES=[{id:'n1',name:'Chiropractic'},{id:'n2',name:'Neuropathy'},{id:'n3',name:'Autoimmune'},{id:'n4',name:'Weight Loss'},{id:'n5',name:'Other'}];
+const DEFAULT_NICHES=[{id:'n1',name:'Neuropathy'},{id:'n2',name:'Autoimmune'},{id:'n3',name:'Chiropractic'},{id:'n4',name:'Weight Loss'}];
+const DEFAULT_FUNNELS=[{id:'f1',name:'Facebook Ads'},{id:'f2',name:'Google'},{id:'f3',name:'Website'},{id:'f4',name:'Another Provider'},{id:'f5',name:'Signage'},{id:'f6',name:'Existing Patient'},{id:'f7',name:'Insurance Co.'},{id:'f8',name:'Mail Flyer'},{id:'f9',name:'Marketing Event'},{id:'f10',name:'Radio'},{id:'f11',name:'Unknown'}];
 function newLoc(seedRevenue){return {goals:Object.fromEntries(METRICS.map(m=>[m.key,m.goal])),drivers:{...DRIVERS},data:{2025:seedRevenue?{revenue:{...REV2025}}:{},2026:{},2027:{}}};}
 
 let state={ year:2025, tol:10, activeLoc:'yukon',
   sources:DEFAULT_SOURCES.map(s=>({...s})), srcSeq:6,
-  niches:DEFAULT_NICHES.map(s=>({...s})), nicheSeq:6,
+  niches:DEFAULT_NICHES.map(s=>({...s})), nicheSeq:DEFAULT_NICHES.length+1,
+  funnels:DEFAULT_FUNNELS.map(s=>({...s})), funnelSeq:DEFAULT_FUNNELS.length+1,
   locations:{ yukon:newLoc(true), wichita:newLoc(false) } };
 let openMetric=null, selMonth=0;
 
@@ -340,6 +345,32 @@ function ensureShape(){
   if(!state.srcSeq)state.srcSeq=state.sources.length+1;
   if(!state.niches||!state.niches.length)state.niches=DEFAULT_NICHES.map(s=>({...s}));
   if(!state.nicheSeq)state.nicheSeq=state.niches.length+1;
+  // v2 taxonomy migration: dedicated care-start ad-type (funnel) list + refreshed niche set.
+  // Triggered once per stored profile via taxV (absent from the initial literal, so a returning
+  // user whose saved data predates this update runs it exactly once, then it's stamped and skipped).
+  if(!state.taxV || state.taxV<2){
+    state.taxV=2;
+    const oldNicheName={}; (state.niches||[]).forEach(n=>oldNicheName[n.id]=n.name);
+    const oldSrcName={}; (state.sources||[]).forEach(s=>oldSrcName[s.id]=s.name);
+    state.funnels=DEFAULT_FUNNELS.map(s=>({...s}));
+    state.funnelSeq=DEFAULT_FUNNELS.length+1;
+    // reset the default niche set to the new one; keep any niches the user added (ids start 'nch')
+    const customNiches=(state.niches||[]).filter(n=>String(n.id).startsWith('nch'));
+    state.niches=DEFAULT_NICHES.map(s=>({...s})).concat(customNiches);
+    state.nicheSeq=Math.max(state.nicheSeq||0,DEFAULT_NICHES.length+1);
+    // remap any existing care-start rows from old ids to the new ids by name, so no logged data breaks
+    const funnelByName={}; state.funnels.forEach(f=>funnelByName[f.name.toLowerCase()]=f.id);
+    const nicheByName={}; state.niches.forEach(n=>nicheByName[n.name.toLowerCase()]=n.id);
+    const fbFunnel=(state.funnels.find(f=>f.name==='Unknown')||state.funnels[state.funnels.length-1]).id;
+    const fbNiche=(state.niches[0]||{}).id;
+    ['yukon','wichita'].forEach(l=>{const loc=state.locations&&state.locations[l];if(!loc)return;Object.values(loc.data||{}).forEach(yd=>{(yd.starts||[]).forEach(s=>{
+      if(s.src){const nm=(oldSrcName[s.src]||'').toLowerCase();s.src=funnelByName[nm]||(state.funnels.some(f=>f.id===s.src)?s.src:fbFunnel);}
+      else s.src=fbFunnel;
+      if(s.niche){const nm=(oldNicheName[s.niche]||'').toLowerCase();s.niche=nicheByName[nm]||(state.niches.some(n=>n.id===s.niche)?s.niche:fbNiche);}
+      else s.niche=fbNiche;
+    });});});
+  }
+  if(!state.funnelSeq)state.funnelSeq=state.funnels.length+1;
   if(!state.activeLoc)state.activeLoc='yukon';
   ['yukon','wichita'].forEach(l=>{const yd=state.locations[l].data[state.year];if(yd&&yd.newptsSrc)Object.keys(yd.newptsSrc).forEach(mm=>syncNewptsForLoc(l,+mm));});
 }
@@ -433,16 +464,18 @@ function startsCombined(){const a=locObj('yukon').data[state.year],b=locObj('wic
 function startsForView(){return isCombined()?startsCombined():startsList();}
 function aggBy(arr,key,list){const map={};(list||[]).forEach(o=>map[o.id]={name:o.name,rev:0,n:0});arr.forEach(s=>{const id=s[key];if(!map[id])map[id]={name:'—',rev:0,n:0};map[id].rev+=(+s.amt||0);map[id].n++;});return Object.values(map).filter(x=>x.n>0).sort((a,b)=>b.rev-a.rev);}
 function leaderRows(items){if(!items.length)return '<div class="note">No care starts logged yet.</div>';const max=items[0].rev||1;return '<div class="srcmix">'+items.map(x=>`<div class="row"><span class="nm">${esc(x.name)}</span><span class="track"><i style="width:${Math.max(4,(x.rev/max*100)).toFixed(0)}%"></i></span><span class="vv num">$${commas(x.rev)} · ${x.n}</span></div>`).join('')+'</div>';}
-function startsAnalyticsHTML(){const arr=startsForView();const total=arr.reduce((a,s)=>a+(+s.amt||0),0);const count=arr.length;const avg=count?total/count:0;const bySrc=aggBy(arr,'src',state.sources);const byNiche=aggBy(arr,'niche',state.niches);const topSrc=bySrc[0],topNiche=byNiche[0];const insight=count?`<div class="insight">💰 Top funnel: <b>${esc(topSrc.name)}</b> — $${commas(topSrc.rev)} from ${topSrc.n} start${topSrc.n>1?'s':''}. Top niche: <b>${esc(topNiche.name)}</b> — $${commas(topNiche.rev)}. Average plan value $${commas(avg)}.</div>`:'';return `<div class="statrow">${stat('Care-start revenue','$'+commas(total))}${stat('# of starts',count)}${stat('Avg plan value',count?'$'+commas(avg):'—')}</div><div class="sechead" style="margin-top:14px">Revenue by marketing funnel</div>${leaderRows(bySrc)}<div class="sechead" style="margin-top:16px">Revenue by niche</div>${leaderRows(byNiche)}${insight}`;}
-function startLogHTML(){const arr=startsList();const opt=(list,sel)=>list.map(o=>`<option value="${o.id}" ${o.id===sel?'selected':''}>${esc(o.name)}</option>`).join('');const moOpt=(sel)=>MONTHS.map((mo,i)=>`<option value="${i}" ${i===sel?'selected':''}>${mo}</option>`).join('');const rows=arr.map((s,i)=>`<div class="startrow"><select class="stsel" data-sidx="${i}" data-f="m">${moOpt(s.m)}</select><div class="stamt"><span class="pfx">$</span><input type="number" inputmode="decimal" onfocus="this.select()" data-sidx="${i}" data-f="amt" value="${s.amt==null?'':s.amt}" placeholder="0"></div><select class="stsel" data-sidx="${i}" data-f="src">${opt(state.sources,s.src)}</select><select class="stsel" data-sidx="${i}" data-f="niche">${opt(state.niches,s.niche)}</select><button class="srcdel" data-stdel="${i}" title="Remove">✕</button></div>`).join('');return `<div class="startloghdr"><span>Month</span><span>Plan $</span><span>Funnel</span><span>Niche</span><span></span></div><div class="startlog">${rows||'<div class="note">No starts yet — add your first below.</div>'}</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center"><button class="btn primary" data-addstart>+ Add care start</button><span style="width:14px"></span><input id="newNiche" placeholder="New niche name…" style="border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;border-radius:9px;padding:7px 10px;width:150px"><button class="btn" data-addniche>+ Add niche</button></div>`;}
+function startsAnalyticsHTML(){const arr=startsForView();const total=arr.reduce((a,s)=>a+(+s.amt||0),0);const count=arr.length;const avg=count?total/count:0;const bySrc=aggBy(arr,'src',state.funnels);const byNiche=aggBy(arr,'niche',state.niches);const topSrc=bySrc[0],topNiche=byNiche[0];const insight=count?`<div class="insight">💰 Top funnel: <b>${esc(topSrc.name)}</b> — $${commas(topSrc.rev)} from ${topSrc.n} start${topSrc.n>1?'s':''}. Top niche: <b>${esc(topNiche.name)}</b> — $${commas(topNiche.rev)}. Average plan value $${commas(avg)}.</div>`:'';return `<div class="statrow">${stat('Care-start revenue','$'+commas(total))}${stat('# of starts',count)}${stat('Avg plan value',count?'$'+commas(avg):'—')}</div><div class="sechead" style="margin-top:14px">Revenue by marketing funnel</div>${leaderRows(bySrc)}<div class="sechead" style="margin-top:16px">Revenue by niche</div>${leaderRows(byNiche)}${insight}`;}
+function startLogHTML(){const arr=startsList();const opt=(list,sel)=>list.map(o=>`<option value="${o.id}" ${o.id===sel?'selected':''}>${esc(o.name)}</option>`).join('');const monthStarts=arr.map((s,i)=>({s,i})).filter(o=>(+o.s.m)===selMonth);const monthBtns=MONTHS.map((mo,i)=>{const has=arr.some(s=>(+s.m)===i);return `<button class="mbtn ${i===selMonth?'on':''} ${has?'has':''}" data-startm="${i}">${mo}</button>`;}).join('');const rows=monthStarts.map(o=>`<div class="startrow"><div class="stamt"><span class="pfx">$</span><input type="number" inputmode="decimal" onfocus="this.select()" data-sidx="${o.i}" data-f="amt" value="${o.s.amt==null?'':o.s.amt}" placeholder="0"></div><select class="stsel" data-sidx="${o.i}" data-f="src">${opt(state.funnels,o.s.src)}</select><select class="stsel" data-sidx="${o.i}" data-f="niche">${opt(state.niches,o.s.niche)}</select><button class="srcdel" data-stdel="${o.i}" title="Remove">✕</button></div>`).join('');return `<div class="note" style="margin:0 0 10px">Click a month, then log each start's plan amount, ad type &amp; niche for that month.</div><div class="monthsel">${monthBtns}</div><div class="startloghdr"><span>Plan $</span><span>Ad type</span><span>Niche</span><span></span></div><div class="startlog">${rows||`<div class="note" style="margin-top:0">No starts logged for ${MONTHS[selMonth]} yet — add one below.</div>`}</div><button class="btn primary" style="margin-top:12px" data-addstart>+ Add care start to ${MONTHS[selMonth]}</button><div class="managelists"><div class="mlrow"><input id="newFunnel" placeholder="New ad type…"><button class="btn" data-addfunnel>+ Add ad type</button></div><div class="mlrow"><input id="newNiche" placeholder="New niche…"><button class="btn" data-addniche>+ Add niche</button></div></div>`;}
 function startsSectionHTML(readOnly){return `<div class="sechead" style="margin-top:26px;border-top:1px solid var(--line-2);padding-top:20px">Care plan starts — funnel &amp; niche ROI</div><div class="comboNote" style="background:var(--a-bg);border-color:color-mix(in srgb,var(--a) 40%,transparent);color:var(--a-ink)">🔒 No patient names — log the plan amount, funnel &amp; niche only (keeps it HIPAA-safe).</div><div id="startsAnalytics">${startsAnalyticsHTML()}</div>${readOnly?'':('<div class="sechead" style="margin-top:20px">Log a care start</div>'+startLogHTML())}`;}
 function refreshStartsAnalytics(){const el=$('modal').querySelector('#startsAnalytics');if(el)el.innerHTML=startsAnalyticsHTML();renderHero();renderGrid();}
 function wireStarts(){
   const store=()=>{const o=locObj(state.activeLoc).data[state.year];o.starts=o.starts||[];return o.starts;};
   $('modal').querySelectorAll('.stsel').forEach(el=>el.onchange=()=>{const i=+el.dataset.sidx,f=el.dataset.f,arr=store();if(arr[i]){arr[i][f]=(f==='m')?+el.value:el.value;}persist();refreshStartsAnalytics();});
   $('modal').querySelectorAll('input[data-f="amt"]').forEach(el=>el.oninput=()=>{const i=+el.dataset.sidx,arr=store();if(arr[i]){arr[i].amt=el.value===''?0:(parseFloat(el.value)||0);}persist();refreshStartsAnalytics();});
+  $('modal').querySelectorAll('[data-startm]').forEach(b=>b.onclick=()=>{selMonth=+b.dataset.startm;renderDetail();});
   $('modal').querySelectorAll('[data-stdel]').forEach(b=>b.onclick=()=>{const i=+b.dataset.stdel,arr=store();arr.splice(i,1);persist();renderDetail();});
-  const add=$('modal').querySelector('[data-addstart]');if(add)add.onclick=()=>{const arr=store();arr.push({m:0,amt:0,src:(state.sources[0]||{}).id,niche:(state.niches[0]||{}).id});persist();renderDetail();};
+  const add=$('modal').querySelector('[data-addstart]');if(add)add.onclick=()=>{const arr=store();arr.push({m:selMonth,amt:0,src:(state.funnels[0]||{}).id,niche:(state.niches[0]||{}).id});persist();renderDetail();};
+  const addF=$('modal').querySelector('[data-addfunnel]');if(addF)addF.onclick=()=>{const inp=$('modal').querySelector('#newFunnel');const nm=inp&&inp.value.trim();if(!nm)return;state.funnels.push({id:'fnl'+(state.funnelSeq++),name:nm});persist();renderDetail();};
   const addN=$('modal').querySelector('[data-addniche]');if(addN)addN.onclick=()=>{const inp=$('modal').querySelector('#newNiche');const nm=inp&&inp.value.trim();if(!nm)return;state.niches.push({id:'nch'+(state.nicheSeq++),name:nm});persist();renderDetail();};
 }
 
