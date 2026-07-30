@@ -89,7 +89,8 @@
   .gl{stroke:var(--line);stroke-width:1}
   .gridcard{padding:0;overflow:hidden}
   .scroll{overflow-x:auto}
-  table.kpi-t{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;min-width:1160px}
+  table.kpi-t{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;min-width:1240px}
+  table.kpi-t .avg-col{font-weight:600;border-right:1px solid var(--line)}
   table.kpi-t th,table.kpi-t td{padding:12px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line-2)}
   table.kpi-t thead th{position:sticky;top:0;background:var(--surface);color:var(--ink-3);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;z-index:2;border-bottom:1px solid var(--line)}
   table.kpi-t th.metric,table.kpi-t td.metric{text-align:left;position:sticky;left:0;background:var(--surface);z-index:1;min-width:220px;border-right:1px solid var(--line)}
@@ -445,11 +446,11 @@ function renderHero(){$('hero').innerHTML=HERO.map(key=>{const m=METRICS.find(x=
 function renderChart(){$('chart').innerHTML=chartSVG(METRICS.find(x=>x.key==='revenue'),1120,230);$('chartHint').textContent=`${locName()} · ${state.year} · bars graded vs target`;}
 function locName(){const l=LOCS.find(x=>x.id===state.activeLoc);return l?l.name:'';}
 
-function renderGrid(){let h='<thead><tr><th class="metric">Metric</th>';MONTHS.forEach(mo=>h+=`<th>${mo}</th>`);h+='<th class="tgt-col">Target /mo</th><th>YTD</th><th>Goal&nbsp;%</th><th class="stk">Status</th></tr></thead><tbody>';
+function renderGrid(){let h='<thead><tr><th class="metric">Metric</th>';MONTHS.forEach(mo=>h+=`<th>${mo}</th>`);h+='<th class="tgt-col">Target /mo</th><th class="avg-col">Avg /mo</th><th>YTD</th><th>Goal&nbsp;%</th><th class="stk">Status</th></tr></thead><tbody>';
   METRICS.forEach(m=>{const s=ytdStats(m);h+=`<tr data-open="${m.key}"><td class="metric"><div class="m-name">${m.label}<span class="go">›</span></div>${m.sub?`<div class="m-sub">${m.sub}</div>`:''}</td>`;
     for(let i=0;i<12;i++){const v=monthVal(m,i);const st=statusOf(m,v,monthlyTarget(m));h+=`<td>${v==null?'<span class="cval n">–</span>':`<span class="cval ${st}">${fmtFull(v,m.fmt)}</span>`}</td>`;}
     const mt=monthlyTarget(m);let ocls,ytdShow,ratio;if(m.type==='level'){const lv=levelValue(m.key);ocls=statusOf(m,lv,goalOf(m.key));ytdShow=fmtFull(lv,m.fmt);ratio=lv/goalOf(m.key);}else{ocls=s.cnt?statusOf(m,s.sum,s.pace):'';ytdShow=s.cnt?fmtFull(s.sum,m.fmt):'';ratio=s.pace>0?s.sum/s.pace:0;}
-    const mpct=Math.max(0,Math.min(1,m.dir==='down'&&ratio>0?1/ratio:ratio));h+=`<td class="tgt-col num">${fmtFull(mt,m.fmt)}</td><td class="num" style="font-weight:650">${ytdShow}</td><td>${ocls?`<span class="meter"><i style="width:${(mpct*100).toFixed(0)}%;background:${statusColor[ocls]}"></i></span>`:''}</td><td class="stk"><span class="pill ${ocls||'n'}"><span class="pd" style="background:${statusColor[ocls]}"></span>${statusLabel[ocls]}</span></td></tr>`;});
+    const mpct=Math.max(0,Math.min(1,m.dir==='down'&&ratio>0?1/ratio:ratio));const avgOk=m.type!=='level'&&s.cnt>0;const avgV=avgOk?s.sum/s.cnt:null;const avgCls=avgOk?statusOf(m,avgV,mt):'';h+=`<td class="tgt-col num">${fmtFull(mt,m.fmt)}</td><td class="avg-col num">${avgOk?`<span class="cval ${avgCls}">${fmtFull(avgV,m.fmt)}</span>`:'<span class="cval n">–</span>'}</td><td class="num" style="font-weight:650">${ytdShow}</td><td>${ocls?`<span class="meter"><i style="width:${(mpct*100).toFixed(0)}%;background:${statusColor[ocls]}"></i></span>`:''}</td><td class="stk"><span class="pill ${ocls||'n'}"><span class="pd" style="background:${statusColor[ocls]}"></span>${statusLabel[ocls]}</span></td></tr>`;});
   $('grid').innerHTML=h+'</tbody>';$('grid').querySelectorAll('tr[data-open]').forEach(tr=>tr.onclick=()=>openDetail(tr.dataset.open));}
 
 // ---- detail ----
